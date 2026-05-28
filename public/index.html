@@ -64,7 +64,7 @@
     <header>
         <div>
             <h1>Database Schema</h1>
-            <div class="timestamp">Last Updated: 2026-05-28 02:41:50 UTC</div>
+            <div class="timestamp">Last Updated: 2026-05-28 02:55:31 UTC</div>
         </div>
         <button id="theme-toggle">Toggle Dark Mode</button>
     </header>
@@ -84,14 +84,6 @@ orders {
     int user_id FK "not null"
     decimal total_price  ""
     varchar order_status  ""
-    timestamp created_at  ""
-}
-
-customers {
-    int id PK "pk, increment"
-    varchar username UK "unique, not null"
-    varchar email  "not null"
-    varchar status  "default: 'active'"
     timestamp created_at  ""
 }
 
