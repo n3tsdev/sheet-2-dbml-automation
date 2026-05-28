@@ -1,8 +1,9 @@
+import { SheetData } from './google';
+
 export interface TableColumn {
   name: string;
   dataType: string;
   isPrimaryKey: boolean;
-  foreignKey: string;
 }
 
 export interface Table {
@@ -21,40 +22,75 @@ export interface ParseResult {
 }
 
 /**
- * Parses raw rows from Google Sheets into Mermaid ER Diagram syntax.
- * Expected columns: [TableName, FieldName, DataType, IsPrimaryKey, ForeignKey]
+ * Parses raw multi-sheet data from Google Sheets into Mermaid ER Diagram syntax.
  */
-export function parseToMermaid(rows: string[][]): ParseResult {
+export function parseToMermaid(sheets: SheetData[]): ParseResult {
   const tables = new Map<string, Table>();
   const relationships: string[] = [];
   let fieldCount = 0;
 
-  // 1. Group rows into Tables
-  for (const row of rows) {
-    const tableName = row[0]?.trim();
-    if (!tableName) continue; // Skip empty rows
+  for (const sheet of sheets) {
+    const sheetName = sheet.sheetName.trim();
+    const rows = sheet.data;
 
-    const fieldName = row[1]?.trim() || 'unknown_field';
-    // Clean up spaces in data types for Mermaid compatibility
-    const dataType = row[2]?.trim().replace(/\s+/g, '_') || 'VARCHAR';
-    const isPrimaryKey = row[3]?.trim().toLowerCase() === 'true' || row[3]?.trim().toLowerCase() === 'yes';
-    const foreignKey = row[4]?.trim() || '';
-
-    if (!tables.has(tableName)) {
-      tables.set(tableName, { name: tableName, columns: [] });
+    if (sheetName.toLowerCase() === 'index') {
+      // Skip index sheet
+      continue;
     }
 
-    tables.get(tableName)!.columns.push({
-      name: fieldName,
-      dataType,
-      isPrimaryKey,
-      foreignKey,
-    });
-    
-    fieldCount++;
+    if (sheetName.toLowerCase() === 'relationships') {
+      // Parse relationships sheet
+      // Format: ['#', 'From Table', 'FK Field', '→', 'To Table', 'PK Field']
+      // Skip rows 0 and 1
+      for (let i = 2; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || row.length === 0) continue;
+
+        const fromTable = row[1]?.trim();
+        const fkField = row[2]?.trim();
+        const toTable = row[4]?.trim();
+
+        if (fromTable && toTable) {
+          // Determine link label. If we have fkField, use it, else just 'has'
+          const label = fkField ? `"${fkField}"` : '"has"';
+          relationships.push(`  ${toTable} ||--o{ ${fromTable} : ${label}`);
+        }
+      }
+      continue;
+    }
+
+    // It's a Table sheet
+    // Format: ['field_name', 'field_type', 'note / FK']
+    // Skip rows 0 and 1
+    const columns: TableColumn[] = [];
+    for (let i = 2; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || row.length === 0) continue;
+
+      const fieldName = row[0]?.trim();
+      if (!fieldName) continue; // Skip if no field name
+
+      const dataType = row[1]?.trim().replace(/\s+/g, '_') || 'VARCHAR';
+      const note = row[2]?.trim() || '';
+      
+      // Check if note contains exactly "PK" or "PK,..."
+      const isPrimaryKey = note === 'PK' || note.startsWith('PK,');
+
+      columns.push({
+        name: fieldName,
+        dataType,
+        isPrimaryKey,
+      });
+
+      fieldCount++;
+    }
+
+    // Only add table if it has columns or we want to show it anyway.
+    // We add it anyway so empty tables still show up if they exist as a sheet.
+    tables.set(sheetName, { name: sheetName, columns });
   }
 
-  // 2. Build Mermaid Syntax
+  // Build Mermaid Syntax
   let syntax = 'erDiagram\n';
 
   // Build entities and attributes
@@ -65,21 +101,7 @@ export function parseToMermaid(rows: string[][]): ParseResult {
       if (col.isPrimaryKey) {
         attributes += ' PK';
       }
-      if (col.foreignKey) {
-        attributes += ' FK';
-      }
       syntax += `    ${col.dataType} ${col.name}${attributes}\n`;
-
-      // Build relationships if a foreign key exists
-      if (col.foreignKey) {
-        // Assume format is TargetTable.TargetColumn, e.g., "Users.id" or just "Users"
-        const parts = col.foreignKey.split('.');
-        const targetTable = parts[0];
-        if (targetTable) {
-          // Zero or many to exactly one (standard FK relationship)
-          relationships.push(`  ${targetTable} ||--o{ ${tableName} : "has"`);
-        }
-      }
     }
     syntax += `  }\n\n`;
   }
@@ -93,7 +115,7 @@ export function parseToMermaid(rows: string[][]): ParseResult {
     mermaidSyntax: syntax,
     stats: {
       tableCount: tables.size,
-      fieldCount: fieldCount
-    }
+      fieldCount: fieldCount,
+    },
   };
 }
