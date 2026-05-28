@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Schema Visualizer</title>
+    <style>
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #333333;
+            --header-bg: #f5f5f5;
+            --header-border: #e0e0e0;
+        }
+        [data-theme="dark"] {
+            --bg-color: #1e1e1e;
+            --text-color: #f5f5f5;
+            --header-bg: #2d2d2d;
+            --header-border: #444444;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: background-color 0.3s, color 0.3s;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 2rem;
+            background-color: var(--header-bg);
+            border-bottom: 1px solid var(--header-border);
+        }
+        h1 {
+            margin: 0;
+            font-size: 1.5rem;
+        }
+        .timestamp {
+            font-size: 0.9rem;
+            color: #888;
+        }
+        #theme-toggle {
+            background: none;
+            border: 1px solid var(--text-color);
+            color: var(--text-color);
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        main {
+            padding: 2rem;
+            display: flex;
+            justify-content: center;
+            overflow: auto;
+        }
+        pre.mermaid {
+            background-color: transparent !important;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div>
+            <h1>Database Schema</h1>
+            <div class="timestamp">Last Updated: 2026-05-28 02:35:45 UTC</div>
+        </div>
+        <button id="theme-toggle">Toggle Dark Mode</button>
+    </header>
+    <main>
+        <pre class="mermaid">
+erDiagram
+
+users {
+    int id PK "pk, increment"
+    varchar username UK "unique, not null"
+    varchar email  "not null"
+    varchar status  "default: 'active'"
+    timestamp created_at  ""
+}
+
+orders {
+    int user_id FK "not null"
+    decimal total_price  ""
+    varchar order_status  ""
+    timestamp created_at  ""
+}
+
+users ||--o{ orders : "user_id"
+
+        </pre>
+    </main>
+
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        
+        const themeToggle = document.getElementById('theme-toggle');
+        const body = document.body;
+        
+        // Initialize theme
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        if (savedTheme === 'dark') {
+            body.setAttribute('data-theme', 'dark');
+        }
+
+        const initMermaid = () => {
+            const currentTheme = body.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
+            mermaid.initialize({ startOnLoad: true, theme: currentTheme });
+        };
+
+        initMermaid();
+
+        themeToggle.addEventListener('click', () => {
+            const newTheme = body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            if (newTheme === 'dark') {
+                body.setAttribute('data-theme', 'dark');
+            } else {
+                body.removeAttribute('data-theme');
+            }
+            localStorage.setItem('theme', newTheme);
+            
+            // Re-render mermaid
+            location.reload();
+        });
+    </script>
+</body>
+</html>
