@@ -205,7 +205,7 @@
     <header>
         <div class="header-left">
             <h1>🗄️ Database Schema</h1>
-            <div class="timestamp">Last Updated: 2026-05-28 03:16:12 UTC</div>
+            <div class="timestamp">Last Updated: 2026-05-28 03:17:13 UTC</div>
         </div>
         <div class="header-right">
             <button class="btn" id="reset-btn" title="Reset view">⟲ Reset</button>
@@ -228,10 +228,6 @@ users {
 
 orders {
     int id PK "pk, increment"
-    varchar username_id UK "unique, not null"
-    varchar email  "not null"
-    varchar status  "default: 'active'"
-    timestamp created_at  ""
 }
 
 
