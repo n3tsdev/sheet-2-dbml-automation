@@ -5,7 +5,7 @@ on:
     - cron: '*/15 * * * *'
   workflow_dispatch:
   repository_dispatch:
-    types: [sheet_update]
+    types: [sheet_updated]
 
 permissions:
   contents: write
