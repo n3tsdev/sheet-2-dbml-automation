@@ -62,3 +62,60 @@ To enable the automated pipeline:
    - Under **Build and deployment**, select **GitHub Actions** as the source.
 
 The pipeline will run automatically every 15 minutes or you can trigger it manually from the **Actions** tab.
+
+### Real-Time Updates (Trigger on Edit)
+
+If you want the GitHub Actions to run almost real-time whenever you make a change in the Google Sheet, you can use Google Apps Script to send a webhook to GitHub.
+
+1. **Generate a GitHub Personal Access Token (PAT)**:
+   - Go to your GitHub Settings -> **Developer settings** -> **Personal access tokens** -> **Tokens (classic)**.
+   - Click **Generate new token (classic)**.
+   - Give it a name (e.g., `Google Sheets Webhook`) and select the `repo` scope.
+   - Generate and copy the token.
+
+2. **Add Google Apps Script**:
+   - Open your Google Sheet.
+   - Click **Extensions** -> **Apps Script**.
+   - Replace any existing code with the following snippet:
+
+   ```javascript
+   function onChangeTrigger(e) {
+     var githubToken = "YOUR_GITHUB_PERSONAL_ACCESS_TOKEN";
+     var owner = "YOUR_GITHUB_USERNAME_OR_ORG";
+     var repo = "YOUR_REPOSITORY_NAME";
+     
+     var url = "https://api.github.com/repos/" + owner + "/" + repo + "/dispatches";
+     
+     var payload = {
+       "event_type": "sheet_update"
+     };
+     
+     var options = {
+       "method": "post",
+       "headers": {
+         "Authorization": "token " + githubToken,
+         "Accept": "application/vnd.github.v3+json"
+       },
+       "payload": JSON.stringify(payload)
+     };
+     
+     try {
+       UrlFetchApp.fetch(url, options);
+     } catch(err) {
+       console.error("Error triggering GitHub Action: ", err);
+     }
+   }
+   ```
+   - Replace `YOUR_GITHUB_PERSONAL_ACCESS_TOKEN`, `YOUR_GITHUB_USERNAME_OR_ORG`, and `YOUR_REPOSITORY_NAME` with your actual details.
+   - Save the script (Ctrl+S or Cmd+S).
+
+3. **Set Up the Trigger**:
+   - In the Apps Script editor, click the **Triggers** icon on the left menu (it looks like an alarm clock).
+   - Click **+ Add Trigger** (bottom right).
+   - Choose which function to run: `onChangeTrigger`
+   - Choose which deployment should run: `Head`
+   - Select event source: `From spreadsheet`
+   - Select event type: `On change`
+   - Click **Save**. It will ask you to authorize the script; proceed through the warnings to allow it.
+
+Now, whenever you add, edit, or remove data in the sheet, it will immediately trigger the GitHub Action to sync your schema!
