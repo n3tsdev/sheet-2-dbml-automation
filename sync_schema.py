@@ -316,32 +316,33 @@ def generate_html(erd_content):
             transition: opacity 0.5s;
         }}
 
-        /* ── Highlight / Dim states applied to SVG elements ── */
+        /* ── Highlight / Dim: operate on ENTITY GROUP level, not inner elements ── */
 
-        /* When any table is selected, dim ALL entities by default */
-        svg.has-selection .er.entityBox,
-        svg.has-selection .er.entityLabel,
-        svg.has-selection .er.attributeBoxOdd,
-        svg.has-selection .er.attributeBoxEven,
-        svg.has-selection .er.relationshipLine,
-        svg.has-selection .er.relationshipLabelBox,
-        svg.has-selection .er.relationshipLabel {{
-            opacity: 0.15;
+        /* Dim all entity groups and relationship line groups when a selection is active */
+        svg.has-selection g[id^="entity-"],
+        svg.has-selection g.er.relationship {{
+            opacity: 0.12;
             transition: opacity 0.25s, filter 0.25s;
         }}
 
-        /* Highlighted entities / lines stand out */
-        svg.has-selection .er-highlighted {{
+        /* Connected entity groups glow blue */
+        svg.has-selection g[id^="entity-"].er-highlighted,
+        svg.has-selection g.er.relationship.er-highlighted {{
             opacity: 1 !important;
-            filter: drop-shadow(0 0 6px #58a6ff) drop-shadow(0 0 12px #388bfd88) !important;
+            filter: drop-shadow(0 0 5px #58a6ff) drop-shadow(0 0 14px #388bfd66) !important;
             transition: opacity 0.25s, filter 0.25s;
         }}
 
-        /* The clicked (active) table gets a stronger glow */
-        svg.has-selection .er-active {{
+        /* The clicked entity group glows orange-red */
+        svg.has-selection g[id^="entity-"].er-active {{
             opacity: 1 !important;
-            filter: drop-shadow(0 0 8px #f78166) drop-shadow(0 0 18px #f7816688) !important;
+            filter: drop-shadow(0 0 6px #f78166) drop-shadow(0 0 16px #f7816666) !important;
             transition: opacity 0.25s, filter 0.25s;
+        }}
+
+        /* Entity groups that can be dragged — show move cursor on hover */
+        g.entity-draggable {{
+            cursor: move !important;
         }}
     </style>
 </head>
@@ -468,16 +469,57 @@ def generate_html(erd_content):
             applyTransform();
         }}, {{ passive: false }});
 
-        // ── Mouse drag pan ─────────────────────────────────────────────────
-        let isPanning  = false;
+        // ── Drag state (shared between pan-canvas and drag-entity) ───────────
+        let isPanning      = false;
+        let isDraggingEntity = false;
+        let draggedEntity  = null;   // the <g id="entity-xxx"> being dragged
+        let dragEntityStartX = 0;
+        let dragEntityStartY = 0;
+        let dragEntityOrigTx = 0;    // original SVG transform translate X
+        let dragEntityOrigTy = 0;
         let startX     = 0;
         let startY     = 0;
         let startTransX = 0;
         let startTransY = 0;
         let didMove    = false;
 
+        // Helper: read current translate from SVG transform attribute on a <g>
+        const getGroupTranslate = (g) => {{
+            const t = g.getAttribute('transform') || '';
+            const m = t.match(/translate\\(([^,)]+)[,\\s]+([^)]+)\\)/);
+            return m ? [parseFloat(m[1]), parseFloat(m[2])] : [0, 0];
+        }};
+
+        // Mark all entity groups draggable
+        const initEntityDrag = () => {{
+            if (!svg) return;
+            svg.querySelectorAll('g[id^="entity-"]').forEach(g => {{
+                g.classList.add('entity-draggable');
+
+                g.addEventListener('mousedown', (e) => {{
+                    // Only on left-click directly on the entity group
+                    if (e.button !== 0) return;
+                    e.stopPropagation(); // prevent canvas panning
+
+                    isDraggingEntity = true;
+                    draggedEntity    = g;
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    didMove = false;
+                    const [ox, oy] = getGroupTranslate(g);
+                    dragEntityOrigTx = ox;
+                    dragEntityOrigTy = oy;
+                    wrapper.classList.add('dragging');
+                }});
+            }});
+        }};
+
+        initEntityDrag();
+
+        // Canvas pan — only starts when clicking directly on the wrapper/svg (not on an entity)
         wrapper.addEventListener('mousedown', (e) => {{
             if (e.button !== 0) return;
+            if (isDraggingEntity) return; // entity drag takes priority
             isPanning   = true;
             startX      = e.clientX;
             startY      = e.clientY;
@@ -488,6 +530,21 @@ def generate_html(erd_content):
         }});
 
         window.addEventListener('mousemove', (e) => {{
+            if (isDraggingEntity && draggedEntity) {{
+                // Move entity in SVG coordinate space (account for canvas scale)
+                const dx = (e.clientX - startX) / scale;
+                const dy = (e.clientY - startY) / scale;
+                if (Math.abs(dx) > 1 || Math.abs(dy) > 1) didMove = true;
+                const newTx = dragEntityOrigTx + dx;
+                const newTy = dragEntityOrigTy + dy;
+                // Preserve any existing rotate/scale on the group transform
+                const existing = draggedEntity.getAttribute('transform') || '';
+                const withoutTranslate = existing.replace(/translate\\([^)]*\\)/, '').trim();
+                draggedEntity.setAttribute('transform',
+                    `translate(${{newTx}},${{newTy}}) ${{withoutTranslate}}`.trim());
+                return;
+            }}
+
             if (!isPanning) return;
             const dx = e.clientX - startX;
             const dy = e.clientY - startY;
@@ -498,6 +555,8 @@ def generate_html(erd_content):
         }});
 
         window.addEventListener('mouseup', () => {{
+            isDraggingEntity = false;
+            draggedEntity    = null;
             isPanning = false;
             wrapper.classList.remove('dragging');
         }});
@@ -555,6 +614,8 @@ def generate_html(erd_content):
         document.getElementById('reset-btn').addEventListener('click', fitToScreen);
 
         // ── Relationship Highlighting ───────────────────────────────────────
+        // Operates at the entity-group level — glow/dim entire <g id="entity-xxx">
+        // rather than individual inner .er.* elements.
         let activeTable = null;
 
         const clearHighlight = () => {{
@@ -569,6 +630,7 @@ def generate_html(erd_content):
         const highlightTable = (tableName) => {{
             if (!svg) return;
 
+            // Toggle off if same table clicked again
             if (activeTable === tableName) {{
                 clearHighlight();
                 return;
@@ -577,58 +639,62 @@ def generate_html(erd_content):
             activeTable = tableName;
             svg.classList.add('has-selection');
 
+            // Clear previous
             svg.querySelectorAll('.er-highlighted, .er-active').forEach(el => {{
                 el.classList.remove('er-highlighted', 'er-active');
             }});
 
-            const allGroups = svg.querySelectorAll('g[id]');
-            let clickedGroup = null;
+            const lowerTable = tableName.toLowerCase();
 
-            allGroups.forEach(g => {{
-                const id = g.id.toLowerCase();
-                if (id === 'entity-' + tableName.toLowerCase() ||
-                    id.startsWith('entity-' + tableName.toLowerCase() + '-')) {{
+            // ── 1. Mark the clicked entity group as ACTIVE (orange glow) ──
+            let clickedGroup = null;
+            svg.querySelectorAll('g[id^="entity-"]').forEach(g => {{
+                const entityId = g.id.replace(/^entity-/i, '').split(/[^a-zA-Z0-9_]/)[0].toLowerCase();
+                if (entityId === lowerTable) {{
                     g.classList.add('er-active');
                     clickedGroup = g;
                 }}
             }});
 
-            const lowerTable = tableName.toLowerCase();
+            // ── 2. Find connected entity names via relationship labels ──
+            // Mermaid ER relationship groups have class "er relationship"
+            // Each contains a <text> that reads like "users ||--o{{ orders : field"
+            // The label text from our ERD is the field name as relationship label.
+            // We match the entity name encoded in the group's id or label text.
+            const connectedEntityNames = new Set();
 
-            svg.querySelectorAll('.er.relationshipLine, .er.relationshipLabelBox, .er.relationshipLabel').forEach(el => {{
-                const parentG = el.closest('g');
-                if (parentG) {{
-                    const txt = parentG.textContent.toLowerCase();
-                    if (txt.includes(lowerTable)) {{
-                        el.classList.add('er-highlighted');
-                        parentG.classList.add('er-highlighted');
-                    }}
+            svg.querySelectorAll('g.er.relationship').forEach(relGroup => {{
+                // The relationship label text
+                const labelText = relGroup.textContent.trim().toLowerCase();
+                if (labelText.includes(lowerTable)) {{
+                    relGroup.classList.add('er-highlighted');
+
+                    // Find other entity names in this relationship.
+                    // Relationship <g> contains marker refs in <path> ids like "ER_1_2"
+                    // More reliable: scan all entity groups to see which match label text
+                    svg.querySelectorAll('g[id^="entity-"]').forEach(eg => {{
+                        const eName = eg.id.replace(/^entity-/i, '').split(/[^a-zA-Z0-9_]/)[0].toLowerCase();
+                        if (eName !== lowerTable && labelText.includes(eName)) {{
+                            connectedEntityNames.add(eName);
+                        }}
+                    }});
                 }}
             }});
 
-            if (clickedGroup) {{
-                clickedGroup.querySelectorAll('.er').forEach(el => {{
-                    el.classList.add('er-active');
-                }});
-
-                const highlightedEdges = svg.querySelectorAll('.er-highlighted');
-                highlightedEdges.forEach(edge => {{
-                    const edgeText = edge.textContent.toLowerCase();
-                    allGroups.forEach(g => {{
-                        const gId = g.id.toLowerCase();
-                        if (!gId.startsWith('entity-')) return;
-                        const entityName = gId.replace('entity-', '').split('-')[0];
-                        if (entityName !== lowerTable && edgeText.includes(entityName)) {{
-                            g.classList.add('er-highlighted');
-                            g.querySelectorAll('.er').forEach(el => el.classList.add('er-highlighted'));
-                        }}
-                    }});
-                }});
-            }}
+            // ── 3. Highlight connected entity groups (blue glow) ──
+            svg.querySelectorAll('g[id^="entity-"]').forEach(eg => {{
+                const eName = eg.id.replace(/^entity-/i, '').split(/[^a-zA-Z0-9_]/)[0].toLowerCase();
+                if (connectedEntityNames.has(eName)) {{
+                    eg.classList.add('er-highlighted');
+                }}
+            }});
         }};
 
+        // Click handler on SVG — walk up to find entity group
         if (svg) {{
             svg.addEventListener('click', (e) => {{
+                if (didMove) return; // ignore clicks after a drag
+
                 let target = e.target;
                 let entityGroup = null;
 
@@ -642,25 +708,18 @@ def generate_html(erd_content):
 
                 if (entityGroup) {{
                     e.stopPropagation();
-                    const rawName = entityGroup.id.replace(/^entity-/i, '').split('-')[0];
+                    const rawName = entityGroup.id.replace(/^entity-/i, '').split(/[^a-zA-Z0-9_]/)[0];
                     highlightTable(rawName);
-                }} else if (!didMove) {{
+                }} else {{
                     clearHighlight();
                 }}
             }});
         }}
 
+        // Click on bare canvas also clears selection
         wrapper.addEventListener('click', (e) => {{
-            if (e.target === wrapper && !didMove) {{
-                clearHighlight();
-            }}
+            if (e.target === wrapper && !didMove) clearHighlight();
         }});
-
-        if (svg) {{
-            svg.querySelectorAll('g[id^="entity-"]').forEach(g => {{
-                g.style.cursor = 'pointer';
-            }});
-        }}
 
         const hintBar = document.getElementById('hint-bar');
         setTimeout(() => {{ hintBar.style.opacity = '0'; }}, 5000);
